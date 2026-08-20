@@ -1,4 +1,3 @@
-@"
 # Stage 1: Build dependencies in a temporary builder image
 FROM python:3.12-slim as builder
 
@@ -51,8 +50,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 
 # Production start command using Gunicorn with Uvicorn workers for concurrency
 CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-"]
-"@ | Set-Content -Path Dockerfile -Encoding UTF8
-
-git add .
-git commit -m "fix: downgrade docker python to 3.12 for compatibility"
-git push origin main
