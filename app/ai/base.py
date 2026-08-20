@@ -1,31 +1,44 @@
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
-
-from pydantic import BaseModel, Field
-
-
-class LLMMessage(BaseModel):
-    role: str = Field(..., description="The role of the message sender (system, user, assistant)")
-    content: str = Field(..., description="The content of the message")
-
-
-class LLMResponse(BaseModel):
-    content: str = Field(..., description="The generated response content")
-    model: str = Field(..., description="The model that generated the response")
-    usage: Optional[Dict[str, int]] = Field(None, description="Token usage information")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+from typing import Dict, Any
+from pydantic import BaseModel
 
 
 class LLMProviderError(Exception):
-    """Base exception for LLM provider errors."""
+    """Raised when an LLM provider encounters an error."""
     pass
 
 
-class BaseLLMProvider(ABC):
-    @abstractmethod
-    async def generate(self, messages: List[LLMMessage], **kwargs) -> LLMResponse:
-        pass
+class LLMMessage(dict):
+    """
+    THE SILVER BULLET:
+    Subclasses dict so msg["role"] works perfectly for old code (Guard/Intent),
+    but also sets attributes so msg.role works perfectly for new code.
+    Pydantic V2 cannot break this.
+    """
+    def __init__(self, role: str = "", content: str = "", **kwargs):
+        super().__init__(role=role, content=content, **kwargs)
+        self.role = role
+        self.content = content
 
-    @abstractmethod
+    def __getattr__(self, key: str) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(f"'LLMMessage' object has no attribute '{key}'")
+
+
+class LLMResponse(BaseModel):
+    """Standardized response from any LLM provider."""
+    content: str
+    model: str
+    usage: Dict[str, int]
+    provider: str
+
+
+class BaseLLMProvider:
+    """Abstract base class for LLM providers."""
+    
+    async def generate(self, messages: list, **kwargs) -> LLMResponse:
+        raise NotImplementedError
+
     def get_provider_name(self) -> str:
-        pass
+        raise NotImplementedError

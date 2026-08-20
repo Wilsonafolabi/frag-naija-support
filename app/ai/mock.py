@@ -1,31 +1,29 @@
-import json
-from typing import List
-from app.ai.base import BaseLLMProvider, LLMMessage, LLMResponse
+import structlog
+from app.ai.base import BaseLLMProvider, LLMResponse
+
+logger = structlog.get_logger(__name__)
+
 
 class MockLLMProvider(BaseLLMProvider):
-    def __init__(self, default_response: str = "This is a mock response from the Frag Naija support assistant."):
-        self.default_response = default_response
+    def __init__(self, settings):
+        self.settings = settings
         self.call_count = 0
 
-    async def generate(self, messages: List[LLMMessage], **kwargs) -> LLMResponse:
+    async def generate(self, messages: list, **kwargs) -> LLMResponse:
         self.call_count += 1
         
-        # If JSON mode is requested, return a mock classification
-        if kwargs.get("response_format", {}).get("type") == "json_object":
-            content = json.dumps({
-                "intent": "general_inquiry",
-                "confidence": 0.99,
-                "requires_human": False,
-                "reason": "Mock classification"
-            })
-        else:
-            content = self.default_response
-
+        # FIX: Use dictionary access instead of object attributes
+        user_message = next(
+            (msg["content"] for msg in reversed(messages) if msg["role"] == "user"), 
+            ""
+        )
+        
+        content = f"Mock response to: {user_message[:50]}"
         return LLMResponse(
             content=content,
             model="mock-model",
-            usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-            metadata={"mock": True, "call_count": self.call_count},
+            usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            provider="mock"
         )
 
     def get_provider_name(self) -> str:

@@ -10,10 +10,18 @@ logger = structlog.get_logger(__name__)
 class GroqProvider(BaseLLMProvider):
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.client = AsyncGroq(api_key=settings.groq_api_key)
+        
+        # FIX: Pass max_retries and timeout to the CLIENT initialization
+        self.client = AsyncGroq(
+            api_key=settings.groq_api_key,
+            max_retries=settings.groq_max_retries,
+            timeout=settings.groq_timeout,
+        )
+        
         self.model = settings.groq_model
         self.timeout = settings.groq_timeout
         self.max_retries = settings.groq_max_retries
+        
         logger.info(
             "groq_provider_initialized",
             model=self.model,
@@ -22,18 +30,17 @@ class GroqProvider(BaseLLMProvider):
         )
 
     async def generate(self, messages: list, **kwargs) -> LLMResponse:
-        # FIX: Access dictionary keys with ["key"] instead of object attributes (.key)
+        # Extract dictionary values (works perfectly with our LLMMessage bridge)
         groq_messages = [
             {"role": msg["role"], "content": msg["content"]} 
             for msg in messages
         ]
 
         try:
+            # FIX: Removed max_retries and timeout from here. They belong in the client init.
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=groq_messages,
-                timeout=self.timeout,
-                max_retries=self.max_retries,
                 **kwargs,
             )
 
