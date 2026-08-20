@@ -1,71 +1,59 @@
 import structlog
 from groq import AsyncGroq
-from typing import List
 
-from app.ai.base import BaseLLMProvider, LLMMessage, LLMResponse, LLMProviderError
+from app.ai.base import BaseLLMProvider, LLMResponse
 from app.config import Settings
 
 logger = structlog.get_logger(__name__)
 
 
 class GroqProvider(BaseLLMProvider):
-    """Production-ready Groq LLM provider."""
-
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.client = AsyncGroq(api_key=settings.groq_api_key)
         self.model = settings.groq_model
-        
+        self.timeout = settings.groq_timeout
+        self.max_retries = settings.groq_max_retries
         logger.info(
             "groq_provider_initialized",
             model=self.model,
-            timeout=settings.groq_timeout,
-            max_retries=settings.groq_max_retries,
-        )
-        
-        self.client = AsyncGroq(
-            api_key=settings.groq_api_key,
-            timeout=settings.groq_timeout,
-            max_retries=settings.groq_max_retries,
+            timeout=self.timeout,
+            max_retries=self.max_retries,
         )
 
-    async def generate(self, messages: List[LLMMessage], **kwargs) -> LLMResponse:
-        groq_messages = [{"role": msg.role, "content": msg.content} for msg in messages]
-        
+    async def generate(self, messages: list, **kwargs) -> LLMResponse:
+        # FIX: Access dictionary keys with ["key"] instead of object attributes (.key)
+        groq_messages = [
+            {"role": msg["role"], "content": msg["content"]} 
+            for msg in messages
+        ]
+
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=groq_messages,
-                **kwargs
+                timeout=self.timeout,
+                max_retries=self.max_retries,
+                **kwargs,
             )
-        except Exception as e:
-            # Catch ALL Groq SDK errors (Authentication, RateLimit, Timeout, etc.)
-            error_type = type(e).__name__
-            error_msg = str(e)
-            
-            logger.error(
-                "groq_api_error", 
-                error_type=error_type, 
-                error_message=error_msg
-            )
-            
-            # Return a clean error to the user without crashing the server
-            raise LLMProviderError(f"AI service error ({error_type}): {error_msg}") from e
 
-        choice = response.choices[0]
-        usage = None
-        if response.usage:
+            content = response.choices[0].message.content or ""
             usage = {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens,
+                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                "total_tokens": response.usage.total_tokens if response.usage else 0,
             }
 
-        return LLMResponse(
-            content=choice.message.content or "",
-            model=self.model,
-            usage=usage,
-            metadata={"provider": "groq", "finish_reason": choice.finish_reason}
-        )
+            return LLMResponse(
+                content=content,
+                model=response.model,
+                usage=usage,
+                provider="groq",
+            )
+            
+        except Exception as e:
+            logger.error("groq_api_error", error=str(e))
+            raise
 
     def get_provider_name(self) -> str:
         return "groq"
